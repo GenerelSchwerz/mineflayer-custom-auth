@@ -1,6 +1,6 @@
 {
   "name": "mineflayer-custom-auth",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Alternative authorization for mineflayer accounts",
   "main": "dist/index.js",
   "license": "MIT",
