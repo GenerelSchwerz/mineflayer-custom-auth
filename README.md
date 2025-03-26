@@ -23,9 +23,14 @@ yarn add mineflayer-custom-auth
 
 
 ## Usage
-```js
+```ts
 import {createBot, cookie} from 'mineflayer-custom-auth'
-import fs from 'fs'
+import fs from 'fs' 
+
+// or in javascript:
+const { createBot, cookie } = require('mineflayer-custom-auth')
+const fs = require('fs')
+
 
 // cookie namespace has everything you need to parse cookies.
 const {parseCookies} = cookie
