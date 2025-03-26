@@ -2,11 +2,25 @@
   "name": "mineflayer-custom-auth",
   "version": "0.0.2",
   "description": "Alternative authorization for mineflayer accounts",
-  "main": "dist/index.js",
+  "main": "./dist/cjs/index.js",    
+  "module": "./dist/esm/index.js",    
+  "types": "./dist/types/index.d.ts", 
+  "exports": {
+    ".": {
+      "require": "./dist/cjs/index.js",
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "files": ["dist"],
   "license": "MIT",
   "scripts": {
-    "build": "npx tsc",
-    "start": "node dist/index.js"
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
     "mineflayer": "^4.27.0",
