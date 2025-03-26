@@ -1,10 +1,10 @@
 {
   "name": "mineflayer-custom-auth",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Alternative authorization for mineflayer accounts",
-  "main": "./dist/cjs/index.js",    
-  "module": "./dist/esm/index.js",    
-  "types": "./dist/types/index.d.ts", 
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
   "exports": {
     ".": {
       "require": "./dist/cjs/index.js",
@@ -12,7 +12,9 @@
       "types": "./dist/types/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "MIT",
   "scripts": {
     "build:cjs": "tsc -p tsconfig.cjs.json",
