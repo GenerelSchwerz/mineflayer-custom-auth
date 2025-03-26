@@ -24,7 +24,8 @@ yarn add mineflayer-custom-auth
 
 ## Usage
 ```ts
-import {createBot, cookie} from 'mineflayer-custom-auth'
+// typescript usage:
+import { createBot, cookie } from 'mineflayer-custom-auth'
 import fs from 'fs' 
 
 // or in javascript:
