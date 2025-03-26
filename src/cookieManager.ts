@@ -11,7 +11,6 @@
 import puppeteer, { CookieData, CookieParam } from "puppeteer";
 import fs from "fs";
 import path from "path";
-import crypto from "crypto";
 
 // Import FileCache class from prismarine-auth
 const FileCache = require("prismarine-auth/src/common/cache/FileCache");
@@ -79,6 +78,21 @@ class MinecraftAuthenticator {
     if (!fs.existsSync(this.cachePath)) {
       fs.mkdirSync(this.cachePath, { recursive: true });
     }
+  }
+
+  /**
+   * Generate cache file name for a given username
+   */
+  private generateCacheFileName(username: string): string {
+    return  path.join(this.cachePath, `${createHash(username)}_${this.cacheName}-cache.json`)
+  }
+
+  /**
+   * Clear the cache directory
+   */
+  public clearCache(username: string): void {
+    const fileCache = new FileCache(this.generateCacheFileName(username));
+    fileCache.reset();
   }
 
   /**
@@ -171,6 +185,7 @@ class MinecraftAuthenticator {
 
   private async saveAuthCacheObject(cacheFile: typeof FileCache, authCache: MinecraftAuthCache) {
     // Save authentication cache using FileCache's setCachedPartial method (matching second file)
+    debug('saving auth cache', authCache);
     await cacheFile.setCachedPartial({
       mca: {
         ...authCache.mca,
@@ -220,10 +235,8 @@ class MinecraftAuthenticator {
       // Read cookie file
       const cookieContent = fs.readFileSync(cookieFilePath, "utf8");
 
-      // Generate hash for cache file
-      const hash = createHash(referencedUsername);
       // Create a FileCache instance for storing authentication data
-      const cacheFile = new FileCache(path.join(this.cachePath, `./${hash}_${this.cacheName}-cache.json`));
+      const cacheFile = new FileCache(this.generateCacheFileName(referencedUsername));
 
       // Parse cookies from file
       const cookieObjects = this.parseCookies(cookieContent);
@@ -247,12 +260,10 @@ class MinecraftAuthenticator {
       // Launch browser with proxy
       const browser = await puppeteer.launch({
         args,
-        // headless: this.headless,
+        headless: this.headless,
       });
 
       const page = await browser.newPage();
-
-      debug(page)
 
       if (proxyUrl != null) {
         // Authenticate with proxy
@@ -345,21 +356,19 @@ class MinecraftAuthenticator {
    * @returns Cached access token information or undefined if not found/invalid
    */
   public async getCachedAccessToken(referencedUsername: string, onlyCookieStorage=true) {
-    // Generate hash for cache file
-    const hash = createHash(referencedUsername);
     // Create a FileCache instance for retrieving authentication data
-    const cacheFile = new FileCache(path.join(this.cachePath, `./${hash}_${this.cacheName}-cache.json`));
+    const cacheFile = new FileCache(this.generateCacheFileName(referencedUsername));
 
     try {
       const { mca: token, cookie } = await cacheFile.getCached();
-      debug("[custom auth] token cache", token, 'is from cookie: ', !!cookie);
+      debug("token cache", token, 'is from cookie:', !!cookie);
       if (!token || (onlyCookieStorage && !cookie)) return;
 
       const expires = token.obtainedOn + token.expires_in * 1000;
       const remaining = expires - Date.now();
       const valid = remaining > 1000;
 
-      return { valid, until: expires, token: token.access_token, data: token };
+      return { is_cookie: !!cookie, valid, until: expires, token: token.access_token, data: token };
     } catch (error) {
       console.error("Error getting cached access token:", error);
       return undefined;

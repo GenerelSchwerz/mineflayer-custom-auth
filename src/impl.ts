@@ -9,32 +9,28 @@ import type { Client, ClientOptions } from "minecraft-protocol";
 
 import { BotOptions, createBot as oldCreateBot } from "mineflayer";
 
-const debug = require("debug")("mineflayer-custom-auth")
+const debug = require("debug")("mineflayer-custom-auth");
+
+function validateOptions(options: ClientOptions) {
+  if (!options.profilesFolder) {
+    options.profilesFolder = path.join(minecraftFolderPath, "nmp-cache");
+  }
+}
 
 /**
  * Handle authentication using cached tokens or Microsoft auth
  */
-async function authenticateWithCache(
-  client: Client,
-  clientOptions: ClientOptions,
-  username: string,
-  cookiePath: string,
-  profilesFolder?: string | false
-) {
+async function authenticateWithCache(client: Client, clientOptions: ClientOptions, cookiePath: string) {
   // Initialize authenticator
+  validateOptions(clientOptions);
 
-  let auth;
-  if (profilesFolder === false) {
-    const cachePath = path.join(minecraftFolderPath, "nmp-cache");
-    auth = new MinecraftAuthenticator(cachePath, true);
-  } else {
-    const cachePath = profilesFolder ?? path.join(minecraftFolderPath, "nmp-cache");
-    auth = new MinecraftAuthenticator(cachePath, true);
-  }
+  // technically, this will always be a string. potential typing error on pris-auth's end?
+  const cachePath = clientOptions.profilesFolder as unknown as string; // validated above.
+  const auth = new MinecraftAuthenticator(cachePath, true);
 
   try {
     // Try to pre-authenticate and prepare cache
-    const authResult = await auth.processAccount(username, cookiePath);
+    const authResult = await auth.processAccount(clientOptions.username, cookiePath);
 
     if (authResult.success) {
       debug(`Pre-authentication ${authResult.fromCache ? "from cache" : "successful"}`);
@@ -47,14 +43,44 @@ async function authenticateWithCache(
   }
 }
 
-export function createBot(botOptions: BotOptions) {
-  if (botOptions.auth === "cookies") {
-    botOptions.auth = async (client: Client, clientOptions: ClientOptions) => {
-      if (!botOptions.cookiePath) {
-        throw new Error("Missing cookie path for authentication in bot options.");
+const maybeClearCookieCache = async (client: Client, clientOptions: ClientOptions) => {
+  validateOptions(clientOptions);
+  const cachePath = clientOptions.profilesFolder as unknown as string; // validated above.
+  const auth = new MinecraftAuthenticator(cachePath);
+
+  try {
+    const res = await auth.getCachedAccessToken(clientOptions.username);
+    if (res != null) {
+      if (res.is_cookie) {
+        debug("Clearing cookie cache for Microsoft auth");
+        await auth.clearCache(clientOptions.username);
       }
-      await authenticateWithCache(client, clientOptions, botOptions.username, botOptions.cookiePath, botOptions.profilesFolder);
-    };
+    } else {
+      debug("No cached token found for Microsoft auth, continue as normal.")
+    }
+  } catch (err) {
+    debug("Failed to clear cookie cache:", err);
+  } finally {
+    // Always use minecraft-protocol's built-in auth as fallback
+    await microsoftAuth.authenticate(client, clientOptions);
+  }
+};
+
+export function createBot(botOptions: BotOptions) {
+  switch (botOptions.auth) {
+    case "cookies": {
+      botOptions.auth = async (client: Client, clientOptions: ClientOptions) => {
+        if (!botOptions.cookiePath) {
+          throw new Error("Missing cookie path for authentication in bot options.");
+        }
+        await authenticateWithCache(client, clientOptions, botOptions.cookiePath);
+      };
+      break;
+    }
+
+    case "microsoft": {
+      botOptions.auth = maybeClearCookieCache;
+    }
   }
 
   return oldCreateBot(botOptions);
