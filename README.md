@@ -9,6 +9,9 @@ If you switch back and forth between authenticating via microsoft and cookies, u
 
 This shouldn't be an issue for most use-cases, so I'll fix if someone has an issue.
 
+## Login-type specific documentation
+- [Cookies](./docs/COOKIES.md)
+
 ## Installation
 ```bash
 # npm
@@ -41,3 +44,4 @@ const bot = createBot({
     cookies: cookies, // required if using cookies auth
 })
 ```
+
