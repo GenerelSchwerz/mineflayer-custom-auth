@@ -1,5 +1,5 @@
 import path from "path";
-import { MinecraftAuthenticator } from "../src";
+import { MinecraftAuthenticator } from "./cookies/cookieManager";
 import { BotOptions, createBot as oldCreateBot } from "mineflayer";
 import {cookie} from './cookies/cookie'
 import type { Client, ClientOptions } from "minecraft-protocol";
