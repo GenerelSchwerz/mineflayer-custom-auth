@@ -4,6 +4,11 @@
 ## Why do it in a separate package?
 Because these methods of logging in may be more involved. For example, this cookie login uses Puppeteer, which definitely won't be merged.
 
+## Known Limitations
+If you switch back and forth between authenticating via microsoft and cookies, using the same username, it will clear the cache whenever you switch.
+
+This shouldn't be an issue for most use-cases, so I'll fix if someone has an issue.
+
 ## Installation
 ```bash
 # npm
