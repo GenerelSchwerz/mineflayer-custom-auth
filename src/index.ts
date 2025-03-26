@@ -1,5 +1,6 @@
-export { MinecraftAuthenticator } from "./cookieManager";
+export { MinecraftAuthenticator } from "./cookies/cookieManager";
 
+import {cookie} from './cookies/cookie'
 import type { ClientOptions } from "minecraft-protocol";
 
 import "mineflayer";
@@ -7,8 +8,11 @@ import "mineflayer";
 declare module "mineflayer" {
   interface BotOptions {
     auth: ClientOptions["auth"] | "cookies";
-    cookiePath?: string;
+    cookies?: cookie.Cookie[];
   }
 }
 
+
+
 export { createBot } from "./impl";
+export {cookie} from './cookies/cookie'

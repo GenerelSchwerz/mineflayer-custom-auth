@@ -8,15 +8,17 @@
  * 4. Storing authentication data in cache files
  */
 
-import puppeteer, { CookieData, CookieParam } from "puppeteer";
+import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
+import { generateCacheFileName } from "../utils";
 
 // Import FileCache class from prismarine-auth
 const FileCache = require("prismarine-auth/src/common/cache/FileCache");
-const { createHash } = require("prismarine-auth/src/common/Util");
 
 const debug = require('debug')('mineflayer-custom-auth')
+
+import {cookie} from './cookie'
 
 /**
  * Interface for proxy configuration
@@ -81,17 +83,10 @@ class MinecraftAuthenticator {
   }
 
   /**
-   * Generate cache file name for a given username
-   */
-  private generateCacheFileName(username: string): string {
-    return  path.join(this.cachePath, `${createHash(username)}_${this.cacheName}-cache.json`)
-  }
-
-  /**
    * Clear the cache directory
    */
   public clearCache(username: string): void {
-    const fileCache = new FileCache(this.generateCacheFileName(username));
+    const fileCache = new FileCache(generateCacheFileName(this.cachePath, this.cacheName, username));
     fileCache.reset();
   }
 
@@ -104,45 +99,6 @@ class MinecraftAuthenticator {
   private parseProxyString(proxyString: string): ProxyConfig {
     const [server, port, username, password] = proxyString.split(":");
     return { server, port, username, password };
-  }
-
-  /**
-   * Parse cookies from a Netscape format cookie file
-   *
-   * @param cookieContent - Content of the cookie file
-   * @returns Array of cookie objects
-   */
-  private parseCookies(cookieContent: string): CookieData[] {
-    const cookies = cookieContent.split("\n");
-    const cookieObjects: CookieData[] = [];
-
-    for (const cookie of cookies) {
-      if (cookie.trim() !== "") {
-        const columns = cookie.split("\t");
-        if (columns.length < 7) continue;
-
-        const website = columns[0]?.trim() || "";
-        const name = columns[5]?.trim() || "";
-        const value = columns[6]?.trim() || "";
-
-        if (website && name && value) {
-          const cookieObject: CookieData = {
-            name: name,
-            value: value,
-            domain: website,
-            path: "/",
-            expires: Math.floor(Date.now() / 1000) + 3.154e7, // 1 year in the future
-            httpOnly: false,
-            secure: false,
-            sameSite: "Lax",
-          };
-
-          cookieObjects.push(cookieObject);
-        }
-      }
-    }
-
-    return cookieObjects;
   }
 
   /**
@@ -205,19 +161,15 @@ class MinecraftAuthenticator {
    */
   public async processAccount(
     referencedUsername: string,
-    cookieFilePath: string,
+    cookies: cookie.Cookie[],
     proxyConfig?: ProxyConfig | string
   ): Promise<ProcessAccRes> {
     // Extract file name without extension
-    const name = path.basename(cookieFilePath, ".txt");
-    const cookieEmail = `${name}@cookie.alt`;
-
-    debug(`Processing account: ${cookieEmail} for user: ${referencedUsername}`);
 
     // First, check if we already have a valid cached token
     const cachedToken = await this.getCachedAccessToken(referencedUsername);
     if (cachedToken && cachedToken.valid) {
-      debug(`✅ Already authenticated via cache: ${cookieEmail}`);
+      debug(`✅ Already authenticated via cache: ${referencedUsername}`);
       // Still add to alts.txt to ensure it's listed
       return {
         success: true,
@@ -226,22 +178,19 @@ class MinecraftAuthenticator {
       };
     }
 
-    debug(`No valid cached token found, authenticating: ${cookieEmail}`);
+    debug(`No valid cached token found, authenticating: ${referencedUsername}`);
 
     // Parse proxy if string is provided
     const proxy = typeof proxyConfig === "string" ? this.parseProxyString(proxyConfig) : proxyConfig;
 
     try {
-      // Read cookie file
-      const cookieContent = fs.readFileSync(cookieFilePath, "utf8");
+
 
       // Create a FileCache instance for storing authentication data
-      const cacheFile = new FileCache(this.generateCacheFileName(referencedUsername));
+      const cacheFile = new FileCache(generateCacheFileName(this.cachePath, this.cacheName, referencedUsername));
 
-      // Parse cookies from file
-      const cookieObjects = this.parseCookies(cookieContent);
 
-      if (cookieObjects.length === 0) {
+      if (cookies.length === 0) {
         debug(`No valid cookies found in ${name}`);
         return {
           success: false,
@@ -284,7 +233,7 @@ class MinecraftAuthenticator {
         }
 
         // Check if we have Microsoft login cookies
-        const hasMicrosoftCookies = cookieObjects.some(
+        const hasMicrosoftCookies = cookies.some(
           (cookie) => cookie.domain === ".live.com" || cookie.domain === "login.live.com" || cookie.domain === ".login.live.com"
         );
 
@@ -292,9 +241,9 @@ class MinecraftAuthenticator {
           // Navigate to login page first
           await page.goto("https://login.live.com", { waitUntil: "networkidle0" });
           // Set our cookies
-          await page.setCookie(...cookieObjects);
+          await page.setCookie(...cookies);
         } else {
-          debug(`Warning: No Microsoft login cookies found for ${cookieEmail}`);
+          debug(`Warning: No Microsoft login cookies found for ${referencedUsername}`);
         }
 
         // Authentication process
@@ -318,7 +267,7 @@ class MinecraftAuthenticator {
         const accessToken = this.extractAccessToken(cookieString);
 
         if (accessToken.startsWith("ey")) {
-          debug(`✅ Successfully authenticated: ${cookieEmail}`);
+          debug(`✅ Successfully authenticated: ${referencedUsername}`);
 
           // Create authentication cache object
           const authCache = this.createAuthCacheObject(accessToken);
@@ -330,7 +279,7 @@ class MinecraftAuthenticator {
             token: accessToken,
           };
         } else {
-          debug(`❌ Authentication failed for ${cookieEmail} - Invalid or locked account`);
+          debug(`❌ Authentication failed for ${referencedUsername} - Invalid or locked account`);
           return {
             success: false,
             fromCache: false,
@@ -357,7 +306,7 @@ class MinecraftAuthenticator {
    */
   public async getCachedAccessToken(referencedUsername: string, onlyCookieStorage=true) {
     // Create a FileCache instance for retrieving authentication data
-    const cacheFile = new FileCache(this.generateCacheFileName(referencedUsername));
+    const cacheFile = new FileCache(generateCacheFileName(this.cachePath, this.cacheName, referencedUsername));
 
     try {
       const { mca: token, cookie } = await cacheFile.getCached();
@@ -383,8 +332,8 @@ class MinecraftAuthenticator {
    * @param proxyConfig - Optional proxy configuration
    * @returns The authentication token if successful
    */
-  public async getToken(referencedUsername: string, cookieFilePath: string, proxyConfig?: ProxyConfig | string) {
-    const result = await this.processAccount(referencedUsername, cookieFilePath, proxyConfig);
+  public async getToken(referencedUsername: string, cookies: cookie.Cookie[], proxyConfig?: ProxyConfig | string) {
+    const result = await this.processAccount(referencedUsername, cookies, proxyConfig);
     if (result.success) {
       return result.token;
     }

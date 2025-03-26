@@ -7,4 +7,5 @@ package-lock*
 
 
 cache
-cookies
+test/data
+test/cache

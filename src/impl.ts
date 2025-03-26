@@ -1,14 +1,12 @@
 import path from "path";
 import { MinecraftAuthenticator } from "../src";
+import { BotOptions, createBot as oldCreateBot } from "mineflayer";
+import {cookie} from './cookies/cookie'
+import type { Client, ClientOptions } from "minecraft-protocol";
 
 // Constants
 const minecraftFolderPath = require("minecraft-folder-path");
 const microsoftAuth = require("minecraft-protocol/src/client/microsoftAuth");
-
-import type { Client, ClientOptions } from "minecraft-protocol";
-
-import { BotOptions, createBot as oldCreateBot } from "mineflayer";
-
 const debug = require("debug")("mineflayer-custom-auth");
 
 function validateOptions(options: ClientOptions) {
@@ -20,7 +18,7 @@ function validateOptions(options: ClientOptions) {
 /**
  * Handle authentication using cached tokens or Microsoft auth
  */
-async function authenticateWithCache(client: Client, clientOptions: ClientOptions, cookiePath: string) {
+async function authenticateWithCache(client: Client, clientOptions: ClientOptions, cookies: cookie.Cookie[]) {
   // Initialize authenticator
   validateOptions(clientOptions);
 
@@ -30,7 +28,7 @@ async function authenticateWithCache(client: Client, clientOptions: ClientOption
 
   try {
     // Try to pre-authenticate and prepare cache
-    const authResult = await auth.processAccount(clientOptions.username, cookiePath);
+    const authResult = await auth.processAccount(clientOptions.username, cookies);
 
     if (authResult.success) {
       debug(`Pre-authentication ${authResult.fromCache ? "from cache" : "successful"}`);
@@ -70,10 +68,10 @@ export function createBot(botOptions: BotOptions) {
   switch (botOptions.auth) {
     case "cookies": {
       botOptions.auth = async (client: Client, clientOptions: ClientOptions) => {
-        if (!botOptions.cookiePath) {
+        if (!botOptions.cookies) {
           throw new Error("Missing cookie path for authentication in bot options.");
         }
-        await authenticateWithCache(client, clientOptions, botOptions.cookiePath);
+        await authenticateWithCache(client, clientOptions, botOptions.cookies);
       };
       break;
     }
