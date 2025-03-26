@@ -1,0 +1,19 @@
+{
+  "name": "mineflayer-custom-auth",
+  "version": "0.0.1",
+  "description": "Alternative authorization for mineflayer accounts",
+  "main": "dist/index.js",
+  "license": "MIT",
+  "scripts": {
+    "build": "npx tsc",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "mineflayer": "^4.27.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "debug": "^4.4.0",
+    "puppeteer": "^24.4.0"
+  }
+}

@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+yarn.*
+package-lock*
+
+
+
+cache
+cookies
