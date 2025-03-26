@@ -1,0 +1,2 @@
+# Mineflayer Custom Auth
+
