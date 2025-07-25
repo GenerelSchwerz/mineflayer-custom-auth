@@ -227,9 +227,10 @@ class MinecraftAuthenticator {
 
       try {
         // Clear existing cookies
-        const pageCookies = await page.cookies();
+        const context = page.browserContext();
+        const pageCookies = await context.cookies();
         for (const cookie of pageCookies) {
-          await page.deleteCookie(cookie);
+          await context.deleteCookie(cookie);
         }
 
         // Check if we have Microsoft login cookies
@@ -241,7 +242,13 @@ class MinecraftAuthenticator {
           // Navigate to login page first
           await page.goto("https://login.live.com", { waitUntil: "networkidle0" });
           // Set our cookies
-          await page.setCookie(...cookies);
+          for (const cookie of cookies) {
+            try {
+              await context.setCookie(cookie);
+            } catch (error) {
+              debug(`Error setting cookie for ${referencedUsername}:`, error);
+            }
+          }
         } else {
           debug(`Warning: No Microsoft login cookies found for ${referencedUsername}`);
         }

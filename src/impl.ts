@@ -51,7 +51,7 @@ const maybeClearCookieCache = async (client: Client, clientOptions: ClientOption
     if (res != null) {
       if (res.is_cookie) {
         debug("Clearing cookie cache for Microsoft auth");
-        await auth.clearCache(clientOptions.username);
+        auth.clearCache(clientOptions.username);
       }
     } else {
       debug("No cached token found for Microsoft auth, continue as normal.")
