@@ -191,7 +191,7 @@ class MinecraftAuthenticator {
 
 
       if (cookies.length === 0) {
-        debug(`No valid cookies found in ${name}`);
+        debug(`No valid cookies found in ${cacheFile.filePath}`);
         return {
           success: false,
           fromCache: false,
@@ -296,7 +296,7 @@ class MinecraftAuthenticator {
         await browser.close();
       }
     } catch (error) {
-      console.error(`Error processing account ${name}:`, error);
+      console.error(`Error processing account ${referencedUsername}:`, error);
       return {
         success: false,
         fromCache: false,
