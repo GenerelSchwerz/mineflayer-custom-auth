@@ -1,6 +1,6 @@
 {
   "name": "mineflayer-custom-auth",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Alternative authorization for mineflayer accounts",
   "main": "./dist/index.js",
   "files": [
