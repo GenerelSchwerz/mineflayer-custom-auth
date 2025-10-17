@@ -59,6 +59,7 @@ class MinecraftAuthenticator {
   private readonly cachePath: string;
   private readonly cacheName: string;
   private readonly headless: boolean;
+  private readonly executableName: string;
 
   /**
    * Constructor for MinecraftAuthenticator
@@ -66,10 +67,11 @@ class MinecraftAuthenticator {
    * @param cachePath - Path to the cache directory
    * @param outputFilePath - Path to the output file for authenticated accounts
    */
-  constructor(cachePath = path.join(__dirname, "cache"), headless = false, cacheName = "mca") {
+  constructor(cachePath = path.join(__dirname, "cache"), headless = false, executableName = "", cacheName = "mca") {
     this.cachePath = cachePath;
     this.cacheName = cacheName;
     this.headless = headless;
+    this.executableName = executableName;
     this.ensureCacheDirectory();
   }
 
@@ -215,6 +217,7 @@ class MinecraftAuthenticator {
       // Launch browser with proxy
       const browser = await puppeteer.launch({
         args,
+        executablePath: this.executableName || undefined,
         headless: this.headless,
       });
 

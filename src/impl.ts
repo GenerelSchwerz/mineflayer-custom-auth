@@ -3,6 +3,7 @@ import { MinecraftAuthenticator } from "./cookies/cookieManager";
 import { BotOptions, createBot as oldCreateBot } from "mineflayer";
 import {cookie} from './cookies/cookie'
 import type { Client, ClientOptions } from "minecraft-protocol";
+import { CookieOptions } from ".";
 
 // Constants
 const minecraftFolderPath = require("minecraft-folder-path");
@@ -18,17 +19,21 @@ function validateOptions(options: ClientOptions) {
 /**
  * Handle authentication using cached tokens or Microsoft auth
  */
-async function authenticateWithCache(client: Client, clientOptions: ClientOptions, cookies: cookie.Cookie[]) {
+async function authenticateWithCache(client: Client, clientOptions: ClientOptions, cookieOptions: CookieOptions) {
   // Initialize authenticator
   validateOptions(clientOptions);
 
+  if (!cookieOptions || !cookieOptions.cookies) {
+    throw new Error("Missing cookie options for authentication.");
+  }
+
   // technically, this will always be a string. potential typing error on pris-auth's end?
   const cachePath = clientOptions.profilesFolder as unknown as string; // validated above.
-  const auth = new MinecraftAuthenticator(cachePath, true);
+  const auth = new MinecraftAuthenticator(cachePath, cookieOptions.headless, cookieOptions.executablePath);
 
   try {
     // Try to pre-authenticate and prepare cache
-    const authResult = await auth.processAccount(clientOptions.username, cookies);
+    const authResult = await auth.processAccount(clientOptions.username, cookieOptions.cookies);
 
     if (authResult.success) {
       debug(`Pre-authentication ${authResult.fromCache ? "from cache" : "successful"}`);
@@ -68,10 +73,10 @@ export function createBot(botOptions: BotOptions) {
   switch (botOptions.auth) {
     case "cookies": {
       botOptions.auth = async (client: Client, clientOptions: ClientOptions) => {
-        if (!botOptions.cookies) {
+        if (!botOptions.cookieOptions || !botOptions.cookieOptions.cookies) {
           throw new Error("Missing cookie path for authentication in bot options.");
         }
-        await authenticateWithCache(client, clientOptions, botOptions.cookies);
+        await authenticateWithCache(client, clientOptions, botOptions.cookieOptions);
       };
       break;
     }

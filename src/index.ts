@@ -5,10 +5,17 @@ import type { ClientOptions } from "minecraft-protocol";
 
 import "mineflayer";
 
+
+export interface CookieOptions {
+  cookies?: cookie.Cookie[];
+  headless?: boolean;
+  executablePath?: string;
+}
+
 declare module "mineflayer" {
   interface BotOptions {
     auth: ClientOptions["auth"] | "cookies";
-    cookies?: cookie.Cookie[];
+    cookieOptions?: CookieOptions;
   }
 }
 
