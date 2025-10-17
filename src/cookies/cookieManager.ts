@@ -289,6 +289,7 @@ class MinecraftAuthenticator {
           };
         } else {
           debug(`❌ Authentication failed for ${referencedUsername} - Invalid or locked account`);
+          debug(`Extracted token: ${accessToken}`);
           return {
             success: false,
             fromCache: false,

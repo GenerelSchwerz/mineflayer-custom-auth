@@ -1,4 +1,4 @@
-import {createBot, cookie} from "mineflayer-custom-auth"
+import {createBot, cookie} from "../"
 import fs from 'fs'
 
 const {parseCookies} = cookie
@@ -17,7 +17,7 @@ const bot = createBot({
     profilesFolder: __dirname + '/cache',  
     cookieOptions: {
         cookies: cookies,
-        headless: true,
+        headless: false
         // executablePath: '/path/to/chrome' // optional
     }
 })

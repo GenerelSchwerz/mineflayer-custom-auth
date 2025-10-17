@@ -14,7 +14,7 @@ const bot = createBot({
     host: 'anticheat-test.com',
     auth: 'cookies',
     cookieOptions: {
-        headless: true,
+        headless: false,
         cookies: cookies,   
     },
     profilesFolder: __dirname + '/cache'
