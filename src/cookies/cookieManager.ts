@@ -185,9 +185,10 @@ class MinecraftAuthenticator {
 
     try {
 
+      const name = generateCacheFileName(this.cachePath, this.cacheName, referencedUsername)
 
       // Create a FileCache instance for storing authentication data
-      const cacheFile = new FileCache(generateCacheFileName(this.cachePath, this.cacheName, referencedUsername));
+      const cacheFile = new FileCache(name);
 
 
       if (cookies.length === 0) {
@@ -289,7 +290,7 @@ class MinecraftAuthenticator {
         await browser.close();
       }
     } catch (error) {
-      console.error(`Error processing account ${name}:`, error);
+      console.error(`Error processing account ${referencedUsername}:`, error);
       return {
         success: false,
         fromCache: false,
