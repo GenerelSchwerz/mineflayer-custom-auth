@@ -1,6 +1,6 @@
 {
   "name": "mineflayer-custom-auth",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Alternative authorization for mineflayer accounts",
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
@@ -22,13 +22,14 @@
     "build:types": "tsc -p tsconfig.types.json",
     "build": "npm run build:cjs && npm run build:esm && npm run build:types",
     "clean": "rm -rf dist",
+    "postinstall": "npm run clean && npm run build ",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
     "@types/node": "^24.8.1",
     "minecraft-protocol": "^1.62.0",
     "mineflayer": "^4.27.0",
-    "mineflayer-custom-auth": "file:./",
+
     "typescript": "^5.8.2"
   },
   "dependencies": {
