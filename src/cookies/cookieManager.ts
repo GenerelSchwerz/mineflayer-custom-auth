@@ -203,7 +203,12 @@ class MinecraftAuthenticator {
       let proxyUrl = null;
       if (proxy != null) {
         // Configure proxy URL
-        proxyUrl = new URL(`http://${proxy.username}:${proxy.password}@${proxy.server}:${proxy.port}`);
+
+        if (!proxy.username && !proxy.password) {
+          proxyUrl = new URL(`http://${proxy.server}:${proxy.port}`);
+        } else {
+          proxyUrl = new URL(`http://${proxy.username}:${proxy.password}@${proxy.server}:${proxy.port}`);
+        }
         args.push(`--proxy-server=${proxyUrl.host}`);
       }
 
@@ -215,7 +220,7 @@ class MinecraftAuthenticator {
 
       const page = await browser.newPage();
 
-      if (proxyUrl != null) {
+      if (proxyUrl != null && proxyUrl.username && proxyUrl.password) {
         // Authenticate with proxy
         await page.authenticate({
           username: proxyUrl.username,
