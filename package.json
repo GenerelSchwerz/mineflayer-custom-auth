@@ -2,9 +2,7 @@
   "name": "mineflayer-custom-auth",
   "version": "0.1.6",
   "description": "Alternative authorization for mineflayer accounts",
-  "main": "./dist/cjs/index.js",
-  "module": "./dist/esm/index.js",
-  "types": "./dist/types/index.d.ts",
+  "main": "./dist/index.js",
   "files": [
     "dist"
   ],
@@ -16,7 +14,7 @@
   },
   "devDependencies": {
     "mineflayer": "^4.27.0",
-    "mineflayer-custom-auth": "file:./",
+    "mineflayer-custom-auth": "^0.1.6",
     "typescript": "^5.8.2"
   },
   "dependencies": {
