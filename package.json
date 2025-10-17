@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "mineflayer": "^4.27.0",
-    "mineflayer-custom-auth": "^0.1.7",
+    "mineflayer-custom-auth": "file:./dist",
     "typescript": "^5.8.2"
   },
   "dependencies": {
