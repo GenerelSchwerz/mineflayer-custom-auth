@@ -13,7 +13,10 @@ const bot = createBot({
     username: 'Generel_Schwerz',
     host: 'anticheat-test.com',
     auth: 'cookies',
-    cookies: cookies,
+    cookieOptions: {
+        headless: true,
+        cookies: cookies,   
+    },
     profilesFolder: __dirname + '/cache'
 })
 

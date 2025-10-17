@@ -14,8 +14,11 @@ const bot = createBot({
     username: 'Generel_Schwerz',
     host: 'anticheat-test.com',
     auth: 'cookies',
-    cookies: cookies,
-    profilesFolder: __dirname + '/cache'
+    profilesFolder: __dirname + '/cache',
+    cookieOptions: {
+        headless: true,
+        cookies: cookies,
+    }
 })
 
 bot.on('spawn', () => {

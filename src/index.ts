@@ -4,13 +4,9 @@ import {cookie} from './cookies/cookie'
 import type { ClientOptions } from "minecraft-protocol";
 
 import "mineflayer";
+import { CookieOptions } from "./types";
 
 
-export interface CookieOptions {
-  cookies?: cookie.Cookie[];
-  headless?: boolean;
-  executablePath?: string;
-}
 
 declare module "mineflayer" {
   interface BotOptions {
@@ -20,6 +16,6 @@ declare module "mineflayer" {
 }
 
 
-
+export type { CookieOptions } from "./types";
 export { createBot } from "./impl";
-export {cookie} from './cookies/cookie'
+export { cookie } from './cookies/cookie';
