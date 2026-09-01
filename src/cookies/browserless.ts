@@ -17,10 +17,16 @@ const MINECRAFT_COBRAND_ID = "8058f65d-ce06-4c30-9559-473c9275a65d";
 const MINECRAFT_LOGIN_URL = "https://www.minecraft.net/en-us/login";
 const MICROSOFT_REDIRECT_URI = "https://sisu.xboxlive.com/connect/oauth/XboxLive";
 const MICROSOFT_SCOPE = "XboxLive.Signin XboxLive.offline_access";
+const LEGACY_LIVE_CLIENT_ID = "00000000402b5328";
+const LEGACY_LIVE_REDIRECT_URI = "https://login.live.com/oauth20_desktop.srf";
+const LEGACY_LIVE_SCOPE = "service::user.auth.xboxlive.com::MBI_SSL";
+const LEGACY_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 const ENDPOINTS = {
   sisuConnect: "https://sisu.xboxlive.com/connect/XboxLive/",
   microsoftAuthorize: "https://login.live.com/oauth20_authorize.srf",
+  xboxUserAuthenticate: "https://user.auth.xboxlive.com/user/authenticate",
+  xstsAuthorize: "https://xsts.auth.xboxlive.com/xsts/authorize",
   minecraftLogin: "https://api.minecraftservices.com/authentication/login_with_xbox",
   minecraftProfile: "https://api.minecraftservices.com/minecraft/profile",
 };
@@ -53,6 +59,15 @@ type MinecraftLoginResponse = {
   access_token?: string;
 };
 
+type XboxTokenResponse = {
+  Token?: string;
+  DisplayClaims?: {
+    xui?: Array<{
+      uhs?: string;
+    }>;
+  };
+};
+
 type SisuTokenItem = {
   Item1?: string;
   Item2?: {
@@ -71,7 +86,6 @@ type MinecraftProfileResponse = {
 };
 
 type SilentAuthFailureReason =
-  | "missing_cookie_header"
   | "sisu_connect_no_redirect"
   | "microsoft_no_sisu_redirect"
   | "microsoft_continue_no_redirect"
@@ -307,7 +321,21 @@ function createCookieJar(cookies: cookie.Cookie[]) {
   return jar;
 }
 
-function getCookieHeader(jar: BrowserlessCookieJar, urlString: string, required = false) {
+function hasMicrosoftLoginCookies(cookies: cookie.Cookie[]) {
+  return cookies.some((item) => {
+    const domain = item.domain?.replace(/^\./, "").toLowerCase();
+    return domain === "live.com" || domain?.endsWith(".live.com") || domain === "login.microsoftonline.com";
+  });
+}
+
+function createFlatCookieHeader(cookies: cookie.Cookie[]) {
+  return cookies
+    .filter((item) => item.name && item.value && item.value !== "Disabled")
+    .map((item) => `${item.name}=${item.value}`)
+    .join("; ");
+}
+
+function getCookieHeader(jar: BrowserlessCookieJar, urlString: string) {
   const matchingCookies = jar.getCookiesSync(urlString, { http: true });
 
   debug("cookies:header", redactUrl(urlString), {
@@ -315,7 +343,6 @@ function getCookieHeader(jar: BrowserlessCookieJar, urlString: string, required 
     names: matchingCookies.map((item) => item.key),
   });
 
-  if (required && matchingCookies.length === 0) return undefined;
   return jar.getCookieStringSync(urlString, { http: true });
 }
 
@@ -337,11 +364,6 @@ function storeSetCookies(jar: BrowserlessCookieJar, response: HttpResponse, from
     count: names.length,
     names,
   });
-}
-
-function isMicrosoftAuthorizeHost(urlString: string) {
-  const host = new URL(urlString).hostname;
-  return host === "login.live.com" || host.endsWith(".login.live.com");
 }
 
 function isAllowedMicrosoftIntermediate(urlString: string) {
@@ -436,7 +458,21 @@ function buildMinecraftIdentityToken(sisuAccessToken: string) {
 
 function failSilentAuth(reason: SilentAuthFailureReason, details?: Record<string, unknown>) {
   debug("silent-auth:failed", reason, details ?? {});
-  return undefined;
+
+  const messages: Record<SilentAuthFailureReason, string> = {
+    sisu_connect_no_redirect: "Xbox Sisu did not redirect to Microsoft authorization",
+    microsoft_no_sisu_redirect: "Microsoft authorization did not redirect back to Xbox Sisu",
+    microsoft_continue_no_redirect: "Microsoft's continue page did not complete authorization",
+    microsoft_redirect_error: "Microsoft returned an OAuth authorization error",
+    sisu_callback_no_minecraft_redirect: "Xbox Sisu did not redirect to Minecraft",
+    sisu_redirect_error: "Xbox Sisu returned an OAuth authorization error",
+    sisu_redirect_missing_access_token: "Xbox Sisu redirected without a Minecraft access token",
+  };
+
+  const pageKind = typeof details?.pageKind === "string" ? details.pageKind : undefined;
+  const errorDescription = typeof details?.errorDescription === "string" ? details.errorDescription : undefined;
+  const context = pageKind ? ` (Microsoft page: ${pageKind})` : errorDescription ? `: ${errorDescription}` : "";
+  throw new Error(`Browserless cookie authentication failed: ${messages[reason]}${context}.`);
 }
 
 function writeDebugPage(name: string, response: HttpResponse) {
@@ -481,8 +517,7 @@ async function getSisuAuthorizeUrl(proxy: ProxyConfig | string | undefined, opti
 }
 
 async function requestMicrosoftAuthorize(authorizeUrl: string, jar: BrowserlessCookieJar, proxy: ProxyConfig | string | undefined, options: BrowserlessAuthOptions) {
-  const cookieHeader = getCookieHeader(jar, authorizeUrl, isMicrosoftAuthorizeHost(authorizeUrl));
-  if (cookieHeader == null) return undefined;
+  const cookieHeader = getCookieHeader(jar, authorizeUrl);
 
   const response = await request(authorizeUrl, {
     headers: {
@@ -563,10 +598,6 @@ async function resolveMicrosoftAuthorizeRedirect(
       if (!isAllowedMicrosoftIntermediate(location)) return location;
 
       const nextResponse = await requestMicrosoftAuthorize(location, jar, proxy, options);
-      if (!nextResponse) {
-        writeDebugPage("microsoft-redirect-missing-cookies", currentResponse);
-        return undefined;
-      }
 
       currentUrl = location;
       currentResponse = nextResponse;
@@ -575,23 +606,33 @@ async function resolveMicrosoftAuthorizeRedirect(
 
     const continued = await submitMicrosoftContinueForm(currentUrl, currentResponse, jar, proxy, options);
     if (!continued) {
-      writeDebugPage(`microsoft-authorize-${getMicrosoftPageKind(currentResponse.body)}`, currentResponse);
+      const pageKind = getMicrosoftPageKind(currentResponse.body);
+      writeDebugPage(`microsoft-authorize-${pageKind}`, currentResponse);
       debug("microsoft-authorize:stopped", {
         attempt: attempt + 1,
         currentUrl: redactUrl(currentUrl),
         statusCode: currentResponse.statusCode,
-        pageKind: getMicrosoftPageKind(currentResponse.body),
+        pageKind,
         preview: getBodyPreview(currentResponse.body),
       });
-      return undefined;
+      return failSilentAuth(pageKind === "continue" ? "microsoft_continue_no_redirect" : "microsoft_no_sisu_redirect", {
+        statusCode: currentResponse.statusCode,
+        pageKind,
+        currentUrl: redactUrl(currentUrl),
+      });
     }
 
     currentUrl = continued.url;
     currentResponse = continued.response;
   }
 
-  writeDebugPage(`microsoft-authorize-max-attempts-${getMicrosoftPageKind(currentResponse.body)}`, currentResponse);
-  return undefined;
+  const pageKind = getMicrosoftPageKind(currentResponse.body);
+  writeDebugPage(`microsoft-authorize-max-attempts-${pageKind}`, currentResponse);
+  return failSilentAuth("microsoft_no_sisu_redirect", {
+    pageKind,
+    attempts: 6,
+    currentUrl: redactUrl(currentUrl),
+  });
 }
 
 async function getXblIdentityTokenFromSisu(cookies: cookie.Cookie[], proxy: ProxyConfig | string | undefined, options: BrowserlessAuthOptions) {
@@ -599,12 +640,8 @@ async function getXblIdentityTokenFromSisu(cookies: cookie.Cookie[], proxy: Prox
   const jar = createCookieJar(cookies);
 
   const authorizeUrl = await getSisuAuthorizeUrl(proxy, options);
-  const cookieHeader = getCookieHeader(jar, authorizeUrl, true);
-  if (!cookieHeader) return failSilentAuth("missing_cookie_header", { authorizeUrl: redactUrl(authorizeUrl) });
-
   debug("microsoft-authorize:start", redactUrl(authorizeUrl));
   const authorizeResponse = await requestMicrosoftAuthorize(authorizeUrl, jar, proxy, options);
-  if (!authorizeResponse) return failSilentAuth("missing_cookie_header", { authorizeUrl: redactUrl(authorizeUrl) });
 
   const sisuCallbackUrl = await resolveMicrosoftAuthorizeRedirect(authorizeUrl, authorizeResponse, jar, proxy, options);
   if (!sisuCallbackUrl) {
@@ -673,12 +710,21 @@ async function getXblIdentityTokenFromSisu(cookies: cookie.Cookie[], proxy: Prox
   return fields.accessToken;
 }
 
-async function loginWithMinecraft(sisuAccessToken: string, proxy: ProxyConfig | string | undefined, options: BrowserlessAuthOptions) {
-  const identityToken = buildMinecraftIdentityToken(sisuAccessToken);
-
+async function loginWithMinecraftIdentityToken(
+  identityToken: string,
+  proxy: ProxyConfig | string | undefined,
+  options: BrowserlessAuthOptions,
+  includeWebMetadata = false
+) {
   debug("minecraft-login:start", {
     identityTokenKind: "XBL3.0",
   });
+
+  const body: Record<string, unknown> = { identityToken };
+  if (includeWebMetadata) {
+    body.platform = "WEB";
+    body.ensureLegacyEnabled = true;
+  }
 
   const response = await request(ENDPOINTS.minecraftLogin, {
     method: "POST",
@@ -686,11 +732,7 @@ async function loginWithMinecraft(sisuAccessToken: string, proxy: ProxyConfig | 
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({
-      identityToken,
-      platform: "WEB",
-      ensureLegacyEnabled: true,
-    }),
+    body: JSON.stringify(body),
     proxy,
     allowUnsafeProxyTls: options.allowUnsafeProxyTls,
   });
@@ -702,6 +744,112 @@ async function loginWithMinecraft(sisuAccessToken: string, proxy: ProxyConfig | 
 
   debug("minecraft-login:success");
   return data.access_token;
+}
+
+async function loginWithMinecraft(sisuAccessToken: string, proxy: ProxyConfig | string | undefined, options: BrowserlessAuthOptions) {
+  return loginWithMinecraftIdentityToken(buildMinecraftIdentityToken(sisuAccessToken), proxy, options, true);
+}
+
+async function authenticateWithLegacyFlatCookies(
+  cookies: cookie.Cookie[],
+  proxy: ProxyConfig | string | undefined,
+  options: BrowserlessAuthOptions
+): Promise<CookieBrowserlessAuthResult> {
+  const cookieHeader = createFlatCookieHeader(cookies);
+  if (!cookieHeader) throw new Error("Legacy browserless cookie authentication failed: no usable cookies were provided.");
+
+  const authorizeUrl = new URL(ENDPOINTS.microsoftAuthorize);
+  authorizeUrl.searchParams.set("client_id", LEGACY_LIVE_CLIENT_ID);
+  authorizeUrl.searchParams.set("redirect_uri", LEGACY_LIVE_REDIRECT_URI);
+  authorizeUrl.searchParams.set("response_type", "token");
+  authorizeUrl.searchParams.set("scope", LEGACY_LIVE_SCOPE);
+
+  debug("legacy-auth:start", {
+    cookieCount: cookies.length,
+    cookieHeaderBytes: Buffer.byteLength(cookieHeader),
+  });
+
+  const authorizeResponse = await request(authorizeUrl.toString(), {
+    headers: {
+      Cookie: cookieHeader,
+      "User-Agent": LEGACY_USER_AGENT,
+    },
+    proxy,
+    allowUnsafeProxyTls: options.allowUnsafeProxyTls,
+  });
+
+  const redirectUrl = getRedirectLocation(authorizeResponse, authorizeUrl.toString());
+  if (!redirectUrl) {
+    throw new Error(
+      `Legacy browserless cookie authentication failed: Live.com returned HTTP ${authorizeResponse.statusCode} without an OAuth redirect (Microsoft page: ${getMicrosoftPageKind(authorizeResponse.body)}).`
+    );
+  }
+
+  const redirect = new URL(redirectUrl);
+  const fields = new URLSearchParams(redirect.hash.slice(1));
+  const microsoftAccessToken = fields.get("access_token");
+  const oauthError = fields.get("error_description") ?? fields.get("error");
+  if (!microsoftAccessToken) {
+    throw new Error(`Legacy browserless cookie authentication failed: Live.com redirected without an access token${oauthError ? `: ${oauthError}` : "."}`);
+  }
+
+  const rpsTicket = microsoftAccessToken.startsWith("d=") || microsoftAccessToken.startsWith("t=") ? microsoftAccessToken : `t=${microsoftAccessToken}`;
+  const xboxResponse = await request(ENDPOINTS.xboxUserAuthenticate, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      Properties: {
+        AuthMethod: "RPS",
+        SiteName: "user.auth.xboxlive.com",
+        RpsTicket: rpsTicket,
+      },
+      RelyingParty: "http://auth.xboxlive.com",
+      TokenType: "JWT",
+    }),
+    proxy,
+    allowUnsafeProxyTls: options.allowUnsafeProxyTls,
+  });
+  assertStatus(xboxResponse, 200, "Legacy Xbox Live authentication");
+
+  const xboxData = parseJson<XboxTokenResponse>(xboxResponse, "legacy Xbox Live authentication");
+  const xboxToken = xboxData.Token;
+  const userHash = xboxData.DisplayClaims?.xui?.[0]?.uhs;
+  if (!xboxToken || !userHash) throw new Error("Legacy Xbox Live authentication response was missing token data.");
+
+  const xstsResponse = await request(ENDPOINTS.xstsAuthorize, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      Properties: {
+        SandboxId: "RETAIL",
+        UserTokens: [xboxToken],
+      },
+      RelyingParty: "rp://api.minecraftservices.com/",
+      TokenType: "JWT",
+    }),
+    proxy,
+    allowUnsafeProxyTls: options.allowUnsafeProxyTls,
+  });
+  assertStatus(xstsResponse, 200, "Legacy XSTS authorization");
+
+  const xstsData = parseJson<XboxTokenResponse>(xstsResponse, "legacy XSTS authorization");
+  if (!xstsData.Token) throw new Error("Legacy XSTS authorization response was missing a token.");
+
+  const minecraftAccessToken = await loginWithMinecraftIdentityToken(`XBL3.0 x=${userHash};${xstsData.Token}`, proxy, options);
+  const profile = await getMinecraftProfile(minecraftAccessToken, proxy, options);
+
+  debug("legacy-auth:success", { username: profile.name });
+  return {
+    username: profile.name,
+    uuid: profile.id,
+    accessToken: minecraftAccessToken,
+  };
 }
 
 async function getMinecraftProfile(accessToken: string, proxy: ProxyConfig | string | undefined, options: BrowserlessAuthOptions): Promise<{ id: string; name: string }> {
@@ -737,6 +885,12 @@ export async function authenticateWithBrowserlessCookies(
   proxy?: ProxyConfig | string,
   options: BrowserlessAuthOptions = {}
 ): Promise<CookieBrowserlessAuthResult | undefined> {
+  if (!hasMicrosoftLoginCookies(cookies)) {
+    debug("auth-path:selected", "legacy-flat-cookie");
+    return authenticateWithLegacyFlatCookies(cookies, proxy, options);
+  }
+
+  debug("auth-path:selected", "sisu-cookie-jar");
   const xblIdentityToken = await getXblIdentityTokenFromSisu(cookies, proxy, options);
   if (!xblIdentityToken) return undefined;
 
