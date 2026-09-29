@@ -3,22 +3,42 @@
   "version": "0.5.0",
   "description": "Alternative authorization for mineflayer accounts",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "files": [
-    "dist"
+    "dist",
+    "examples",
+    "refresh_single.js",
+    ".env.example"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Osamu-GWAD/mineflayer-custom-auth.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Osamu-GWAD/mineflayer-custom-auth/issues"
+  },
+  "homepage": "https://github.com/Osamu-GWAD/mineflayer-custom-auth#readme",
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build"
+    "refresh": "node refresh_single.js",
+    "example:refresh": "node --env-file=.env examples/refresh-token.js",
+    "example:cookies": "node examples/cookies.js",
+    "example:access": "node --env-file=.env examples/access-token.js",
+    "test": "npm run build && node --test test/refreshToken.regression.test.js test/mergedAuth.regression.test.js test/library.regression.test.js",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^25.5.2",
-    "minecraft-protocol": "^1.66.0",
-    "mineflayer": "^4.27.0",
-    "prismarine-auth": "^3.1.1",
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "minecraft-protocol": "^1.66.0",
+    "mineflayer": "^4.27.0",
+    "prismarine-auth": "^3.1.1",
     "debug": "^4.4.0",
     "https-proxy-agent": "^9.0.0",
     "minecraft-folder-path": "^1.2.0",

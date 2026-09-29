@@ -6,6 +6,7 @@ import { Cookie as ToughCookie, CookieJar } from "tough-cookie";
 import { cookie } from "./cookie";
 import { buildProxyUrl } from "./proxy";
 import type { ProxyConfig } from "../types";
+import { getAccessTokenFromMsauthCookie, type MsauthCookieOptions } from "./msauth";
 
 const debug = require("debug")("mineflayer-custom-auth:cookie-browserless");
 const { HttpsProxyAgent } = require("https-proxy-agent");
@@ -39,9 +40,7 @@ type RequestOptions = {
   allowUnsafeProxyTls?: boolean;
 };
 
-type BrowserlessAuthOptions = {
-  allowUnsafeProxyTls?: boolean;
-};
+type BrowserlessAuthOptions = MsauthCookieOptions;
 
 type ContinueForm = {
   action: string;
@@ -83,8 +82,8 @@ type SilentAuthFailureReason =
 type BrowserlessCookieJar = CookieJar;
 
 export type CookieBrowserlessAuthResult = {
-  username: string;
-  uuid: string;
+  username?: string;
+  uuid?: string;
   accessToken: string;
 };
 
@@ -737,6 +736,8 @@ export async function authenticateWithBrowserlessCookies(
   proxy?: ProxyConfig | string,
   options: BrowserlessAuthOptions = {}
 ): Promise<CookieBrowserlessAuthResult | undefined> {
+  const session = cookies.find(item => item.name === "__Host-MSAAUTHP" && /(^|\.)live\.com$/i.test(item.domain));
+  if (session) return getAccessTokenFromMsauthCookie(session.value, { ...options, proxy });
   const xblIdentityToken = await getXblIdentityTokenFromSisu(cookies, proxy, options);
   if (!xblIdentityToken) return undefined;
 

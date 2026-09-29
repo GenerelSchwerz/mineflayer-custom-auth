@@ -8,6 +8,15 @@ importers:
 
   .:
     dependencies:
+      minecraft-protocol:
+        specifier: ^1.66.0
+        version: 1.66.0
+      mineflayer:
+        specifier: ^4.27.0
+        version: 4.37.0
+      prismarine-auth:
+        specifier: ^3.1.1
+        version: 3.1.1
       debug:
         specifier: ^4.4.0
         version: 4.4.3
@@ -33,15 +42,6 @@ importers:
       '@types/node':
         specifier: ^25.5.2
         version: 25.5.2
-      minecraft-protocol:
-        specifier: ^1.66.0
-        version: 1.66.0
-      mineflayer:
-        specifier: ^4.27.0
-        version: 4.37.0
-      prismarine-auth:
-        specifier: ^3.1.1
-        version: 3.1.1
       typescript:
         specifier: ^5.8.2
         version: 5.9.3

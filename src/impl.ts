@@ -1,10 +1,12 @@
 import path from "path";
+import crypto from "crypto";
 import { CookieCacheManager, createCookieAuthenticator } from "./cookies/cookieManager";
-import { buildJavaPatchedManager, buildLivePatchedManager } from "./tokenAccess";
+import { buildJavaPatchedManager, buildLivePatchedManager, DEFAULT_REFRESH_CLIENT_ID } from "./tokenAccess";
 import { BotOptions, createBot as oldCreateBot } from "mineflayer";
 import type { Client, ClientOptions } from "minecraft-protocol";
 import { CookieOptions } from ".";
 import { LiveCacheEntry, MinecraftJavaCacheEntry } from "./types";
+import { getAccessToken } from "./unified";
 
 // Constants
 const { Authflow, Titles } = require("prismarine-auth");
@@ -22,7 +24,7 @@ type AuthflowLike<T extends unknown> = {
     cache: {
       getCached: () => Promise<T>;
     };
-  }
+  };
 };
 
 type AuthClient = Client & {
@@ -41,11 +43,9 @@ function validateOptions(options: ClientOptions) {
   if (!options.profilesFolder) {
     options.profilesFolder = path.join(minecraftFolderPath, "nmp-cache");
   }
-  if (options.authTitle === undefined) {
-    options.authTitle = Titles.MinecraftNintendoSwitch;
-    extendedOptions.deviceType = "Nintendo";
-    extendedOptions.flow = "live";
-  }
+  options.authTitle ??= Titles.MinecraftNintendoSwitch;
+  extendedOptions.deviceType ??= "Nintendo";
+  extendedOptions.flow ??= "live";
 }
 
 /**
@@ -55,12 +55,12 @@ async function authenticateWithCache(client: Client, clientOptions: ClientOption
   // Initialize authenticator
   validateOptions(clientOptions);
 
-  if (!cookieOptions || !cookieOptions.cookies) {
-    throw new Error("Missing cookie options for authentication.");
+  const cookieInput = cookieOptions?.cookies ?? cookieOptions?.cookieFile;
+  if (!cookieOptions || !cookieInput) {
+    throw new Error("Missing cookie options for authentication. Provide 'cookies' or 'cookieFile'.");
   }
 
-  // technically, this will always be a string. potential typing error on pris-auth's end?
-  const cachePath = clientOptions.profilesFolder as unknown as string; // validated above.
+  const cachePath = clientOptions.profilesFolder as unknown as string;
   const auth = createCookieAuthenticator(
     cookieOptions.authMethod ?? "auto",
     cachePath,
@@ -69,23 +69,29 @@ async function authenticateWithCache(client: Client, clientOptions: ClientOption
     "mca",
     {
       allowUnsafeProxyTls: cookieOptions.allowUnsafeProxyTls,
+      timeout: cookieOptions.timeout,
+      fetchProfile: cookieOptions.fetchProfile,
+      microsoftClientId: cookieOptions.microsoftClientId,
+      microsoftRedirectUri: cookieOptions.microsoftRedirectUri,
+      microsoftScope: cookieOptions.microsoftScope,
     }
   );
   const proxy = cookieOptions.proxy;
 
-
-  const authResult = await auth.processAccount(clientOptions.username, cookieOptions.cookies, proxy);
+  const authResult = await auth.processAccount(clientOptions.username, cookieInput, proxy);
   if (!authResult.success) {
     throw new Error(authResult.error ?? "Cookie authentication failed before Minecraft protocol authentication.");
   }
 
   debug(`Pre-authentication ${authResult.fromCache ? "from cache" : "successful"}`);
-  await microsoftAuth.authenticate(client, clientOptions);
+  if (!authResult.token) throw new Error("Cookie authentication returned no Minecraft token.");
+  clientOptions.javaAccessToken = authResult.token;
+  await authenticateWithAccessToken(client, clientOptions);
 }
 
 const maybeClearCookieCache = async (client: Client, clientOptions: ClientOptions) => {
   validateOptions(clientOptions);
-  const cachePath = clientOptions.profilesFolder as unknown as string; // validated above.
+  const cachePath = clientOptions.profilesFolder as unknown as string;
   const auth = new CookieCacheManager(cachePath);
 
   try {
@@ -96,7 +102,7 @@ const maybeClearCookieCache = async (client: Client, clientOptions: ClientOption
         await auth.clearCache(clientOptions.username);
       }
     } else {
-      debug("No cached token found for Microsoft auth, continue as normal.")
+      debug("No cached token found for Microsoft auth, continue as normal.");
     }
   } catch (err) {
     debug("Failed to clear cookie cache:", err);
@@ -105,7 +111,6 @@ const maybeClearCookieCache = async (client: Client, clientOptions: ClientOption
     await microsoftAuth.authenticate(client, clientOptions);
   }
 };
-
 
 function accessTokenWarningGate(client: Client, clientOptions: ClientOptions) {
   if (!clientOptions.javaAccessToken) {
@@ -118,9 +123,8 @@ function refreshTokenWarningGate(client: Client, clientOptions: ClientOptions, w
   if (!clientOptions.liveAccessToken && !clientOptions.liveRefreshToken) {
     throw new Error("No access tokens provided in client options. Access token authentication cannot proceed.");
   } else {
-    console.warn("liveAccessToken or liveRefreshToken is provided, so live authentication may still work.");
     if (wasAccessTokenFlow) {
-      console.warn("Try \"refreshToken\" as your auth method in bot options instead.");
+      console.warn('Try "refreshToken" as your auth method in bot options instead.');
     }
   }
 }
@@ -132,30 +136,26 @@ function customTokenAuthFlow(client: Client, clientOptions: ClientOptions) {
   validateOptions(clientOptions);
 
   if (!authClient.authflow) {
-    authClient.authflow = new Authflow(clientOptions.username, clientOptions.profilesFolder, extendedOptions, clientOptions.onMsaCode);
+    const credential = clientOptions.javaAccessToken || clientOptions.liveRefreshToken || clientOptions.liveAccessToken;
+    const cacheIdentity = credential
+      ? "custom_" + crypto.createHash("sha256").update(JSON.stringify([credential, clientOptions.authTitle, extendedOptions.flow])).digest("hex")
+      : clientOptions.username;
+    authClient.authflow = new Authflow(cacheIdentity, clientOptions.profilesFolder, extendedOptions, clientOptions.onMsaCode);
   }
 
   const authflow = authClient.authflow!;
-  
+
   if (clientOptions.javaAccessToken) {
-    authflow.mca = buildJavaPatchedManager(
-      authflow.mca,
-      clientOptions.javaAccessToken!
-    );
+    authflow.mca = buildJavaPatchedManager(authflow.mca, clientOptions.javaAccessToken!);
   }
 
-  // skip next loader if not needed.
-  
   if (!clientOptions.liveAccessToken && !clientOptions.liveRefreshToken) return;
 
-  if (extendedOptions.flow === 'live' || extendedOptions.flow === 'sisu') {
-    authflow.msa = buildLivePatchedManager(
-      authflow.msa,
-      {
-        accessToken: clientOptions.liveAccessToken,
-        refreshToken: clientOptions.liveRefreshToken,
-      }
-    );
+  if (extendedOptions.flow === "live" || extendedOptions.flow === "sisu") {
+    authflow.msa = buildLivePatchedManager(authflow.msa, {
+      accessToken: clientOptions.liveAccessToken,
+      refreshToken: clientOptions.liveRefreshToken,
+    });
   } else {
     throw new Error(`Unsupported auth flow "${extendedOptions.flow}". Only "live" and "sisu" flows are supported for live token patching.`);
   }
@@ -169,34 +169,87 @@ async function authenticateWithAccessToken(client: Client, clientOptions: Client
 
 async function authenticateWithRefreshToken(client: Client, clientOptions: ClientOptions) {
   refreshTokenWarningGate(client, clientOptions);
+  if (clientOptions.liveRefreshToken) {
+    const extended = clientOptions as ExtendedClientOptions;
+    if (extended.flow && extended.flow !== "live" && extended.flow !== "sisu") throw new Error("Refresh tokens require a live or sisu flow.");
+    const result = await getAccessToken({ refreshToken: clientOptions.liveRefreshToken }, {
+      profilesFolder: typeof clientOptions.profilesFolder === "string" ? clientOptions.profilesFolder : undefined,
+      authTitle: clientOptions.authTitle,
+      microsoftClientId: clientOptions.authTitle,
+      flow: extended.flow as "live" | "sisu" | undefined,
+      deviceType: extended.deviceType,
+      fetchProfile: false,
+    });
+    clientOptions.javaAccessToken = result.accessToken;
+    clientOptions.liveRefreshToken = result.refreshToken ?? clientOptions.liveRefreshToken;
+    clientOptions.authTitle ??= extended.flow === "sisu" ? Titles.MinecraftNintendoSwitch : DEFAULT_REFRESH_CLIENT_ID;
+    await authenticateWithAccessToken(client, clientOptions);
+    return;
+  }
   customTokenAuthFlow(client, clientOptions);
   await microsoftAuth.authenticate(client, clientOptions);
 }
 
+function forwardAuthErrors(authenticate: (client: Client, options: ClientOptions) => Promise<void>) {
+  return (client: Client, options: ClientOptions) => {
+    // minecraft-protocol does not await custom auth callbacks.
+    void Promise.resolve().then(() => authenticate(client, options)).catch(error => client.emit("error", error));
+  };
+}
+
 export function createBot(botOptions: BotOptions) {
+  botOptions = { ...botOptions, ...(botOptions.cookieOptions ? { cookieOptions: { ...botOptions.cookieOptions } } : {}) };
+  // Normalize root options
+  if (botOptions.cookieFile) {
+    botOptions.cookieOptions = {
+      ...botOptions.cookieOptions,
+      cookieFile: botOptions.cookieFile,
+    };
+  }
+
+  const anyBotOptions = botOptions as any;
+  if (botOptions.refreshToken && !anyBotOptions.liveRefreshToken) {
+    anyBotOptions.liveRefreshToken = botOptions.refreshToken;
+  }
+  if (botOptions.accessToken && !anyBotOptions.javaAccessToken) {
+    anyBotOptions.javaAccessToken = botOptions.accessToken;
+  }
+
+  // Auto-detect auth mode if not explicitly specified
+  if (!botOptions.auth || botOptions.auth === ("auto" as any)) {
+    if (botOptions.cookieOptions?.cookieFile || botOptions.cookieOptions?.cookies) {
+      botOptions.auth = "cookies";
+    } else if (anyBotOptions.liveRefreshToken || anyBotOptions.liveAccessToken) {
+      botOptions.auth = "refreshToken";
+    } else if (anyBotOptions.javaAccessToken) {
+      botOptions.auth = "accessToken";
+    }
+  }
+
   switch (botOptions.auth) {
     case "cookies": {
-      botOptions.auth = async (client: Client, clientOptions: ClientOptions) => {
-        if (!botOptions.cookieOptions || !botOptions.cookieOptions.cookies) {
-          throw new Error("Missing cookie path for authentication in bot options.");
+      botOptions.auth = forwardAuthErrors(async (client: Client, clientOptions: ClientOptions) => {
+        const cookieInput = botOptions.cookieOptions?.cookies ?? botOptions.cookieOptions?.cookieFile;
+        if (!botOptions.cookieOptions || !cookieInput) {
+          throw new Error("Missing cookies or cookieFile for authentication in bot options.");
         }
         await authenticateWithCache(client, clientOptions, botOptions.cookieOptions);
-      };
+      });
       break;
     }
 
     case "accessToken": {
-      botOptions.auth = authenticateWithAccessToken;
+      botOptions.auth = forwardAuthErrors(authenticateWithAccessToken);
       break;
     }
 
     case "refreshToken": {
-      botOptions.auth = authenticateWithRefreshToken;
+      botOptions.auth = forwardAuthErrors(authenticateWithRefreshToken);
       break;
     }
 
     case "microsoft": {
-      botOptions.auth = maybeClearCookieCache;
+      botOptions.auth = forwardAuthErrors(maybeClearCookieCache);
       break;
     }
   }
